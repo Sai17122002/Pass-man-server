@@ -10,6 +10,7 @@ const Pass = require("./model/Pass");
 const bcrypt = require("bcryptjs");
 const HttpError = require("./model/httpError");
 const { encrypt, decrypt } = require("./Encryption.js");
+const jwt = require("jsonwebtoken");
 dotenv.config();
 
 app.use(cors());
@@ -24,6 +25,7 @@ mongoose
     console.log(err);
   });
 
+//Sign up
 app.post("/puttable", async (req, res, next) => {
   const { usname, passc, pinn } = req.body;
   let hashedPassword;
@@ -46,8 +48,20 @@ app.post("/puttable", async (req, res, next) => {
 });
 
 app.post("/addpassword", async (req, res, next) => {
-  const { password, title, passcode, username } = req.body;
+  const { password, title, passcode, username, token } = req.body;
 
+  //Authorization
+  try {
+    if (!token) {
+      throw new Error("Authentication failed!");
+    }
+    jwt.verify(token, process.env.JWT_KEY);
+  } catch (err) {
+    const error = new HttpError("Authentication failed!", 401);
+    return next(error);
+  }
+
+  //Encrypt password
   const hpass = encrypt(password);
   const newPass = new Pass({
     password: hpass.password,
@@ -66,12 +80,9 @@ app.post("/addpassword", async (req, res, next) => {
 });
 
 app.post("/showpass", async (req, res, next) => {
-  console.log("showpass");
   const { email } = req.body;
-  console.log(email);
   try {
     const passes = await Pass.find({ passcode: email });
-    console.log(passes);
     res.status(200).json(passes);
   } catch (error) {
     res.status(500).json({ message: error });
@@ -104,16 +115,30 @@ app.post("/userdet", async (req, res, next) => {
   if (!isValidPassword) {
     return next(new HttpError("Invalid credentials, could not log you in."));
   }
-  console.log(users.Username, users.Password);
+
+  let token;
+  try {
+    token = jwt.sign({ email: users.email }, process.env.JWT_KEY, {
+      expiresIn: "1h",
+    });
+  } catch (err) {
+    console.log(err);
+    const error = new HttpError(
+      "Signing up failed, please try again later.",
+      500
+    );
+    return next(error);
+  }
+
   res.json({
     email: users.Username,
     password: users.Password,
+    token: token,
   });
 });
 
 app.post("/allusers", async (req, res, next) => {
   let users = await User.find({}, "-Username");
-  console.log(users);
   res.json({ data: users });
 });
 
